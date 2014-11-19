@@ -1,0 +1,363 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<!DOCTYPE html>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+    <head>
+        <meta charset='UTF-8' />
+        <meta name='viewport' content='width=device-width' />
+        <title>Logimus Air Hockey</title>
+
+        <link rel='stylesheet' href='css/style.css' type='text/css' />
+    </head>
+    <body>
+        <form>
+            <div id='modal'>
+                <h1>Login and play</h1>
+                <label for="playera">Token of Player A:</label>
+                <input id='playera' name="playera" placeholder='Token of Player A' type='text' />
+                <label for="playerb">Token of Player B:</label>
+                <input id='playerb' name="playerb" placeholder='Token of Player B' type='text' />
+
+                <input value='Connect' type='submit' />
+            </div>
+        </form>
+
+        <canvas id='world'></canvas>
+
+        <div id='score'>
+        0 - 0
+        </div>
+
+        <script src='http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js' type='application/javascript'></script>
+        <script src='http://xsteer.com/xsteer.js' type='application/javascript'></script>
+        <script type='application/javascript'>
+            var form       = document.getElementsByTagName( 'form' )[ 0 ];
+            var identifier = document.getElementsByTagName( 'input' );
+            var yA = 0;
+            var yB = 0;
+
+            form.addEventListener( 'submit', function ( e ) {
+                xsteer.connect(
+                    identifier[ 0 ].value,
+                    function ( controller ) {
+                        controller.on( 'accelerated', function( x, y, z ) {
+                            yA = y;
+                        } );
+                    }
+                );
+
+                xsteer.connect(
+                    identifier[ 1 ].value,
+                    function ( controller ) {
+                        controller.on( 'accelerated', function( x, y, z ) {
+                            yB = y;
+                        } );
+                    }
+                );
+                form.style.display = 'none';
+
+                initialize();
+                $( "#score" ).show();
+                window.setInterval(
+                    function () {
+                        moveController( sprites[ 2 ].x, sprites[ 2 ].y + yA * 2, 1 );
+                        moveController( sprites[ 3 ].x, sprites[ 3 ].y + yB * 2, 2 );
+                    },
+                    17
+                );
+                e.preventDefault();  
+            } );
+
+            function ratio( sw, sh, dw, dh ) {
+                return Math.min( dw / sw, dh / sh );
+            }
+            function Vector( x, y ) {
+                var length = -1;
+                this.x = x;
+                this.y = y;
+                this.length = function() {
+                    if ( length == -1 ) {
+                        length = Math.sqrt( x * x + y * y );
+                    }
+                    return length;
+                };
+                this.toString = function() {
+                    return '( ' + this.x + ', ' + this.y + ' )';
+                };
+                this.print = function() {
+                    console.log( this ); 
+                };
+                this.normalize = function() {
+                    return vector.scalarMultiply( 1 / this.length(), this );
+                };
+            }
+            var d;
+            var world = $( "#world" );
+            var ctx = document.getElementById('world').getContext('2d');
+            var U = null;
+            var goal1 = goal2 = 0;
+            var t;
+            var R;
+
+            function onResize() {
+                d = ratio( 1920, 1200, $( window ).width(), $( window ).height() );
+                ctx.clearRect ( 0 , 0, $( world ).width(), $( world ).height() );
+                $( world ).attr( "width", d * 1920 );
+                $( world ).attr( "height", d * 1200 );
+                $( "#score" ).css( "top", ( $( world ).height()/2 ) - ( $( "#score" ).height()/2 ) + "px" );
+                $( "#score" ).css( "left", ( $( 'body' ).width()/2 ) - ( $( "#score" ).width()/2 ) - 12*d + "px" );
+            }
+
+            onResize();
+            var sprites = [
+                { url: 'images/table.jpg', x: 0, y: world.height()/d, obj: new Image() },
+                { url: 'images/disk.png', x: $( world ).width()/2 - ( 130/2 ), y: ( ( $( world ).height()/2 ) ) + ( (130)/2 )/d, obj: new Image() },
+                { url: 'images/controller.png', x: 265, y: 555, obj: new Image() },
+                { url: 'images/controller.png', x: 1435, y: 850, obj: new Image() },
+                { url: 'images/goals.png', x: 0, y: world.height()/d, obj: new Image() }
+            ];
+
+            function initialize() {
+                var random = Math.round( Math.random() );
+                var theta, r;
+
+                if ( random == 0 ) {
+                    random = Math.random() * ( Math.PI+(Math.PI/4) );
+                    theta = random + Math.PI-(Math.PI/4);
+                }
+                else {
+                    random = Math.random() * ( Math.PI/4 );
+                    theta = random + Math.PI/4 ;
+                }
+                r = 20;
+                U = vector.fromPolar( r, theta );
+                R = new Vector( ( $( world ).width()/2 )/d - ( 130/2 ), ( ( $( world ).height()/2 )/d ) + ( (130)/2 ) );
+                sprites[ 1 ].x = R.x;
+                sprites[ 1 ].y = R.y;
+
+                var numLoadedImages = 0;
+                var i;
+
+                for ( i = 0; i < sprites.length; ++i ) {
+                    sprites[ i ].obj = new Image();
+                    sprites[ i ].obj.src = sprites[ i ].url;
+                    sprites[ i ].obj.onload = function() {
+                        ++numLoadedImages;
+                        if ( numLoadedImages == sprites.length ) {
+                            drawWorld( sprites );
+                        }
+                    };
+                }
+
+                onResize();
+                clearInterval( t );
+                t = setInterval( tick, 17 );
+            }
+
+            function draw( obj, x, y ) {
+                var w = obj.width;
+                var h = obj.height;
+                ctx.drawImage( obj, 0, 0, obj.width, obj.height, d * x, world.height() - ( d * y ), d * w, d * h );
+            }
+
+            function drawWorld( a ) {
+                ctx.clearRect ( 0 , 0, $( world ).width(), $( world ).height() );
+                for ( var i = 0; i < a.length; ++i ) {
+                    draw( a[ i ].obj, a[ i ].x, a[ i ].y );
+                }
+                return true;
+            }
+
+            var count = 0;
+
+            var vector = {
+                add: function( a, b ) {
+                    return new Vector(
+                        a.x + b.x,
+                        a.y + b.y
+                    );
+                },
+                scalarMultiply: function( lambda, b ) {
+                    return new Vector(
+                        lambda * b.x,
+                        lambda * b.y
+                    );
+                },
+                dotProduct: function( a, b ) {
+                    return ( a.x * b.x ) + ( a.y * b.y );
+                },
+                subtract: function( a, b ) {
+                    return new Vector(
+                        a.x - b.x,
+                        a.y - b.y
+                    );
+                },
+                distance: function( a, b ) {
+                    return vector.subtract( a, b ).length();
+                },
+                multiply: function( a, b ) {
+                    return new Vector(
+                        a.x * b.x,
+                        a.y * b.y
+                    );
+                },
+                fromPolar: function( r, theta ) {
+                    return new Vector(
+                        r * Math.cos( theta ),
+                        r * Math.sin( theta )
+                    );
+                },
+                reflect: function( a, N ) {
+                    // N normalized
+                    var normalizedA = a.normalize();
+                    var qLength = -this.dotProduct( a.normalize(), N );
+                    if ( qLength < 0 ) {
+                        return a;
+                    }
+                    var q = this.scalarMultiply( qLength, N );
+                    var normalizedB = this.add( this.scalarMultiply( 2, q ), normalizedA );
+                    var b = this.scalarMultiply( a.length(), normalizedB );
+                    return b;
+                }
+            };
+            $( window ).resize( onResize );
+
+            function moveController( x, y, player ) {
+                ++player;
+                if ( y - ( ( d * sprites[ player ].obj.height ) + ( d * sprites[ player ].obj.height/2 ) ) <= 20 * d ) {
+                    sprites[ player ].y = sprites[ player ].obj.height/d - 30;
+                    return false;
+                }
+                if ( y >= world.height()/d - 55 * d ) {
+                    sprites[ player ].y = world.height()/d - 1 * ( 40/d );
+                    return false;
+                }
+                sprites[ player ].x = x;
+                sprites[ player ].y = y;
+                drawWorld( sprites );
+            }
+
+            function Circle( center, radius ) {
+                this.center = center;
+                this.radius = radius;
+            }
+
+            var circle = {
+                intersects: function( a, b ) {
+                    return vector.distance( a.center, b.center ) <= ( 1 * a.radius + 1 * b.radius );
+                }
+            };
+
+            function tick() {
+                var wall = false;
+                var border = 40;
+                if ( sprites[ 1 ].x + U.x + sprites[ 1 ].obj.width >= ( $( world ).width()/d ) - border ) { // right wall
+                    U.x *= -1;
+                    wall = true;
+                }
+                if ( sprites[ 1 ].x + U.x <= border ) { // left wall
+                    U.x *= -1;
+                    wall = true;
+                }
+                if ( sprites[ 1 ].y + U.y + sprites[ 1 ].obj.height >= $( world ).height()/d + 100 ) { // top wall
+                    U.y *= -1;
+                    wall = true;
+                }
+                if ( sprites[ 1 ].y + U.y <= 200 ) { //bottom wall
+                    U.y *= -1;
+                    wall = true;
+                }
+                if ( !wall ) {
+                    sprites[ 1 ].x += U.x;
+                    sprites[ 1 ].y += U.y;
+                }
+                var C1 = new Vector( 
+                    sprites[ 2 ].x + 1 * ( ( 176 * d )/2 ),
+                    sprites[ 2 ].y + 1 * ( ( 176 * d )/2 )
+                );
+                var C2 = new Vector( 
+                    sprites[ 3 ].x + 1 * ( ( 176 * d )/2 ),
+                    sprites[ 3 ].y + 1 * ( ( 176 * d )/2 )
+                );
+                var D = new Vector( 
+                    sprites[ 1 ].x + 1 * U.x + 1 *( ( 130 * d )/2 ),
+                    sprites[ 1 ].y + 1 * U.y + 1 * ( ( 130 * d )/2 )
+                );
+                var disc = new Circle ( 
+                    D, ( 130 )/2
+                );
+                var controller1 = new Circle ( 
+                    C1, ( 176 )/2
+                );
+                var controller2 = new Circle ( 
+                    C2, ( 176 )/2
+                );
+                if ( circle.intersects( disc, controller1 ) ) {
+                    var N = vector.subtract( D, C1 ).normalize();
+                    U = vector.reflect( U, N );
+                }
+                if ( circle.intersects( disc, controller2 ) ) {
+                    var N = vector.subtract( D, C2 ).normalize();
+                    U = vector.reflect( U, N );
+                }
+                drawWorld( sprites );
+                if ( $( world ).height() - sprites[ 1 ].y < $( world ).height() - ( ( sprites[ 4 ].obj.height )/2 - (401/2) + ( border * d ) ) ) {
+                    if ( $( world ).height() - sprites[ 1 ].y > $( world ).height() - ( ( sprites[ 4 ].obj.height )/2 + (401/2) ) ) {
+                        if ( sprites[ 1 ].x - U.x <= border ) { // left wall
+                            ++goal2;
+                            clearInterval( t );
+                            $( "#score" ).text( "GOAL" );
+                            onResize();
+                            setTimeout( function() {
+                                $( "#score" ).text( goal1 + " - " + goal2 );
+                                onResize();
+                                initialize();
+                            }, 2000 );
+                        }
+                        if ( sprites[ 1 ].x - U.x + sprites[ 1 ].obj.width >= ( $( world ).width()/d ) - border ) { // right wall
+                            ++goal1;
+                            clearInterval( t );
+                            $( "#score" ).text( "GOAL" );
+                            onResize();
+                            setTimeout( function() {
+                                $( "#score" ).text( goal1 + " - " + goal2 );
+                                onResize();
+                                initialize();
+                            }, 2000 );
+                        }
+                    }
+                }
+                return true;
+            }
+
+
+            $( document ).keydown( function( e ) {
+                switch( e.keyCode ) {
+                    case 87: // w
+                        moveController( sprites[ 2 ].x, sprites[ 2 ].y + 50, 1 );
+                        break;
+                    case 83: // s
+                        moveController( sprites[ 2 ].x, sprites[ 2 ].y - 50, 1 );
+                        break;
+                    case 65: // a
+                        //moveController( sprites[ 2 ].x - 50, sprites[ 2 ].y, 1 );
+                        break;
+                    case 68: // d
+                        //moveController( sprites[ 2 ].x + 50, sprites[ 2 ].y, 1 );
+                        break;
+                    case 37: // left
+                        //moveController( sprites[ 2 ].x - 50, sprites[ 2 ].y, 2 );
+                        break;
+                    case 38: // up
+                        moveController( sprites[ 3 ].x, sprites[ 3 ].y + 50, 2 );
+                        break;
+                    case 39: // right
+                        //moveController( sprites[ 2 ].x - 50, sprites[ 2 ].y, 2 );
+                        break;
+                    case 40: // down
+                        moveController( sprites[ 3 ].x, sprites[ 3 ].y - 50, 2 );
+                        break;
+                }
+            } );
+        </script>
+    </body>
+</html>
